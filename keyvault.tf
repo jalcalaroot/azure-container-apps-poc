@@ -61,6 +61,17 @@ resource "azurerm_role_assignment" "appgw_kv_secrets_user" {
   principal_id         = azurerm_user_assigned_identity.appgw_kv_reader.principal_id
 }
 
+# containerapps-poc-plan (CI, solo lectura - ver ci_identities.tf) necesita
+# poder leer el certificado durante el refresh de "terraform plan", pero no
+# tiene por que poder crear/modificar nada acá. "Key Vault Reader" es
+# metadata-only (no lee el VALOR de secrets), pero si cubre
+# certificates/read - suficiente para lo que plan necesita.
+resource "azurerm_role_assignment" "ci_plan_kv_reader" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Reader"
+  principal_id         = azurerm_user_assigned_identity.ci_plan.principal_id
+}
+
 # Las asignaciones RBAC de Azure tardan en propagar (hasta unos minutos).
 # Sin esta espera, el primer apply que importa el certificado o crea el
 # Application Gateway puede fallar con 403 aunque el role assignment ya

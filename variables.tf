@@ -161,7 +161,23 @@ variable "app_gateway_sku_capacity" {
 }
 
 variable "extra_key_vault_admin_object_ids" {
-  description = "Object IDs adicionales (ademas de quien corre Terraform ahora mismo) que deben tener 'Key Vault Administrator' sobre el vault de este proyecto. Existe para que alternar entre apply local y apply via CI (ci_identities.tf) no le saque el acceso a quien dejo de ser 'current'. Default incluye el usuario personal que aplico esto la primera vez."
+  description = <<-EOT
+    Object IDs adicionales (ademas de quien corre Terraform ahora mismo) que
+    deben tener 'Key Vault Administrator' sobre el vault de este proyecto.
+
+    Incluye a proposito el principal_id de containerapps-poc-agent (fijo,
+    conocido de antemano - ver ci_identities.tf) en vez de depender de que
+    "quien corre terraform ahora mismo" lo resuelva dinamicamente: la
+    PRIMERA vez que el agente de CI corre, el refresh de
+    azurerm_key_vault_certificate.this (que pasa ANTES de que el propio
+    apply pueda crear su role assignment) ya necesita poder leer el
+    certificado - un 403 real que tumbo la primera corrida del pipeline.
+    Con el principal_id fijo aca, ese acceso ya existe antes de que el
+    agente corra por primera vez.
+  EOT
   type        = list(string)
-  default     = ["cbefa754-767e-40d5-9ae3-a33d82ecbdd6"] # johan_1_04@hotmail.com
+  default = [
+    "cbefa754-767e-40d5-9ae3-a33d82ecbdd6", # johan_1_04@hotmail.com
+    "83ccce6f-45e6-4cb6-bbf3-0aa53c5d402e", # containerapps-poc-agent
+  ]
 }

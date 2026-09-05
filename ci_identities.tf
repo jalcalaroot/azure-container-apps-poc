@@ -113,3 +113,23 @@ resource "azurerm_role_assignment" "ci_plan_state_write" {
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_user_assigned_identity.ci_plan.principal_id
 }
+
+# "Storage Blob Data Contributor" arriba es un rol de DATA PLANE (leer/
+# escribir blobs) - no alcanza para que el propio
+# `data.azurerm_storage_account.tfstate` (arriba, este mismo archivo) pueda
+# leer el objeto ARM de la cuenta de storage, que es una operacion de
+# MANAGEMENT PLANE (Microsoft.Storage/storageAccounts/read). Sin esto, el
+# primer plan/apply de cualquier identidad nueva contra este backend falla
+# con AuthorizationFailed en ese data source - nos paso en la primera
+# corrida real del pipeline.
+resource "azurerm_role_assignment" "ci_agent_state_reader" {
+  scope                = data.azurerm_storage_account.tfstate.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.ci_agent.principal_id
+}
+
+resource "azurerm_role_assignment" "ci_plan_state_reader" {
+  scope                = data.azurerm_storage_account.tfstate.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.ci_plan.principal_id
+}
