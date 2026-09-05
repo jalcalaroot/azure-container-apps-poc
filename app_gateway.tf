@@ -9,7 +9,16 @@ resource "azurerm_public_ip" "appgw" {
 
 # Standard_v2 (sin WAF) para mantener costos bajos en una POC. Subir a
 # WAF_v2 es un cambio de una linea si hace falta mas adelante.
+#
+# Los findings de Checkov suprimidos abajo: el listener HTTP existe a
+# proposito (solo para redirigir a HTTPS, ver redirect_configuration), el
+# backend habla HTTP plano a proposito (TLS ya termino en este Application
+# Gateway, el tramo restante vive enteramente dentro de la VNet - ver
+# container_apps.tf), y WAF esta apagado por costo en una POC.
 resource "azurerm_application_gateway" "this" {
+  #checkov:skip=CKV_AZURE_217:el listener HTTP solo redirige a HTTPS, nunca sirve contenido en texto plano
+  #checkov:skip=CKV_AZURE_218:backend_http_settings usa HTTP a proposito - TLS ya termino en este gateway, el tramo restante es interno a la VNet
+  #checkov:skip=CKV_AZURE_120:WAF_v2 no justificado por costo en esta POC - Standard_v2 alcanza
   name                = var.app_gateway_name
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location

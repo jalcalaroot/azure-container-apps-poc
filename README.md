@@ -117,10 +117,24 @@ Renewing the certificate and Let's Encrypt rate limits: see [CLAUDE.md](CLAUDE.m
 | `container_app_environment_default_domain` / `container_app_fqdn` | Internal FQDNs (VNet-only resolution) |
 | `key_vault_name` | This project's Key Vault |
 
+## CI/CD
+
+GitHub Actions, authenticated to Azure via OIDC (Workload Identity Federation) — no secrets or static credentials stored in GitHub.
+
+| Workflow | Trigger | Identity | What it does |
+|---|---|---|---|
+| `terraform-plan.yml` | Pull request | `containerapps-poc-plan` (read-only) | `fmt -check`, `validate`, [tflint](https://github.com/terraform-linters/tflint), [Checkov](https://www.checkov.io/) (blocking), `plan`, posts the plan as a PR comment (flags any destroy/replace) |
+| `terraform-apply.yml` | Push to `main`, **and weekly on a schedule** | `containerapps-poc-agent` (read/write, scoped to this project's resources only) | `plan` + `apply` |
+| `gitleaks.yml` | PR / push to `main` | — | Secret scanning |
+
+The **weekly schedule** on `terraform-apply.yml` isn't just CI hygiene — it's what renews the Let's Encrypt certificate. `acme_certificate` (see `acme.tf`) only re-issues when it's within 30 days of expiry; nothing else triggers a `terraform apply` on its own, so without this schedule the certificate would silently expire.
+
+Both identities have permissions scoped resource-by-resource (this project's own resource group, the specific DNS zone record, the specific subnet, the shared state storage account) rather than broad access to the shared network resource group — see [CLAUDE.md](CLAUDE.md) for the full RBAC breakdown and the reasoning behind it.
+
 ## Cost
 
 Main ongoing costs: Application Gateway (hourly + capacity units) and its Public IP, Container Apps Consumption (scales toward zero when idle), ACR Basic (flat monthly), Key Vault (per-operation), DNS queries, incremental Log Analytics ingestion. Estimate with the [Azure Pricing Calculator](https://azure.microsoft.com/en-us/pricing/calculator/).
 
 ## Not covered
 
-WAF on Application Gateway (currently `Standard_v2`, not `WAF_v2`), scheduled certificate renewal, autoscaling beyond `min_replicas`/`max_replicas`, multi-region.
+WAF on Application Gateway (currently `Standard_v2`, not `WAF_v2`), autoscaling beyond `min_replicas`/`max_replicas`, multi-region.

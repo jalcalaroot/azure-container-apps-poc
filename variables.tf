@@ -159,3 +159,9 @@ variable "app_gateway_sku_capacity" {
   type        = number
   default     = 1
 }
+
+variable "extra_key_vault_admin_object_ids" {
+  description = "Object IDs adicionales (ademas de quien corre Terraform ahora mismo) que deben tener 'Key Vault Administrator' sobre el vault de este proyecto. Existe para que alternar entre apply local y apply via CI (ci_identities.tf) no le saque el acceso a quien dejo de ser 'current'. Default incluye el usuario personal que aplico esto la primera vez."
+  type        = list(string)
+  default     = ["cbefa754-767e-40d5-9ae3-a33d82ecbdd6"] # johan_1_04@hotmail.com
+}
