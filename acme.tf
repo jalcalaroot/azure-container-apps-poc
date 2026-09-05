@@ -15,23 +15,15 @@ resource "acme_registration" "this" {
   email_address   = var.acme_email
 }
 
-resource "tls_private_key" "cert" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
-}
-
-resource "tls_cert_request" "this" {
-  private_key_pem = tls_private_key.cert.private_key_pem
-  dns_names       = [local.fqdn]
-
-  subject {
-    common_name = local.fqdn
-  }
-}
-
+# NO usamos certificate_request_pem/tls_cert_request aca a proposito: el
+# atributo certificate_p12 (que necesitamos para importar a Key Vault en
+# certificate.tf) viene VACIO cuando el certificado se pide con un CSR
+# externo - solo se genera cuando acme_certificate crea su propia key via
+# common_name. Nos costo un intento fallido de apply descubrirlo.
 resource "acme_certificate" "this" {
-  account_key_pem         = acme_registration.this.account_key_pem
-  certificate_request_pem = tls_cert_request.this.cert_request_pem
+  account_key_pem = acme_registration.this.account_key_pem
+  common_name     = local.fqdn
+  key_type        = "RSA2048"
 
   # PFX password para el certificate_p12 (usado luego por
   # azurerm_key_vault_certificate en certificate.tf).

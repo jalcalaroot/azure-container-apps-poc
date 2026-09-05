@@ -76,9 +76,9 @@ variable "acr_name" {
 }
 
 variable "key_vault_name" {
-  description = "Nombre del Key Vault dedicado a este proyecto - debe ser unico globalmente, 3-24 caracteres alfanumericos"
+  description = "Nombre del Key Vault dedicado a este proyecto - debe ser unico globalmente, 3-24 caracteres alfanumericos. kv-containerapps-poc (el nombre obvio) ya estaba tomado por alguien mas en Azure a nivel global - confirmado con checkNameAvailability, no un soft-delete nuestro."
   type        = string
-  default     = "kv-containerapps-poc"
+  default     = "kv-jalcalaroot-capoc"
 }
 
 variable "container_app_environment_name" {

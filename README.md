@@ -1,154 +1,126 @@
 # Azure Container Apps POC
 
-Proof of concept: a hello-world container served over HTTPS on a custom domain (`container.azure.jalcalaroot.com`), running on **Azure Container Apps** (Consumption plan — the Azure equivalent of ECS on Fargate, not ACI and not AKS), fronted by **Application Gateway** with a **Let's Encrypt** certificate, pulling its image from a dedicated **Azure Container Registry**, and monitored through **Azure Monitor** / Log Analytics.
+A hello-world container served over HTTPS on a custom domain, running on **Azure Container Apps** (Consumption plan) behind **Application Gateway** with a **Let's Encrypt** certificate.
 
-This project builds on top of the real network layer — the `vnet-jalcalaroot` VNet, provisioned by [`jalcalaroot-azure-bootstrap`](../jalcalaroot-azure-bootstrap)'s `environments/dev` (which itself consumes a *separately versioned* `git::github.com/jalcalaroot/azure-virtual-network.git` module — not the `xstratus/azure-virtual-network` repo this POC's own design docs were originally drafted against; same design, different repo/account, naming collision worth knowing about). It does not create its own VNet — it consumes two of that stack's subnets plus its Log Analytics Workspace.
+**Live:** https://container.azure.jalcalaroot.com
 
-## Architecture overview
+## Architecture
 
 ```
                               Internet
                                  |
-                    Application Gateway (snet-appgw)
-                    - Public IP, TLS termination (Let's Encrypt via Key Vault)
-                    - HTTP -> HTTPS redirect
+                    Application Gateway (public)
+                    TLS termination + HTTP -> HTTPS redirect
                                  |
-                    (VNet-internal traffic only, no public IP below this line)
+                    ───── VNet-internal only below this line ─────
                                  |
-              Container Apps Environment (snet-containerapps)
-              - internal_load_balancer_enabled = true
-              - Workload profile: Consumption
+              Container Apps Environment (internal, Consumption)
                                  |
-                          Container App
-                          (nginx:alpine hello-world, pulled from ACR)
+                    Container App (nginx:alpine hello-world)
 ```
 
-Application Gateway is the *only* public entry point. The Container Apps Environment is internal-only — see [Design notes](#design-notes) for why.
+Application Gateway is the only public entry point. The Container Apps Environment has no public exposure — see [CLAUDE.md](CLAUDE.md) for the reasoning and other implementation gotchas.
 
-## What this deploys
+This project consumes an existing VNet (subnets + Log Analytics Workspace) provisioned by a sibling network project; it does not create its own virtual network.
 
-| Resource | Notes |
-|---|---|
-| Resource Group | `rg-containerapps-poc` — own lifecycle, no `prevent_destroy` (disposable POC, unlike `azure-virtual-network`) |
-| Azure Container Registry | Basic SKU, admin user disabled — pull is via managed identity |
-| Container Apps Environment | Internal-only, workload profile `Consumption`, placed in `azure-virtual-network`'s `snet-containerapps` |
-| Container App | `nginx:alpine` + custom `index.html`, pulled from the ACR above |
-| Private DNS Zone (Container Apps default domain) | Wildcard `A` record + VNet link — required for Application Gateway to resolve the Container App's FQDN internally |
-| Application Gateway | Standard_v2, public IP, HTTP->HTTPS redirect, backend pool pointing at the Container App |
-| Public IP | Standard SKU, attached to Application Gateway |
-| Key Vault | **Dedicated to this project** (not the one in `azure-virtual-network` — see [Design notes](#design-notes)), RBAC-authorized, public |
-| Azure DNS Zone | Uses the **existing** `azure.jalcalaroot.com` zone (resource group `jalcalaroot`) via a data source, adds an `A` record for the `container` host |
-| ACME registration + certificate | Let's Encrypt, via DNS-01 challenge against the Azure DNS Zone above |
-| User Assigned Managed Identities | One for Container App -> ACR pull (`AcrPull`), one for Application Gateway -> Key Vault read (`Key Vault Secrets User`) |
-| Diagnostic Settings | Container Apps Environment, Application Gateway, ACR — all forwarded to `azure-virtual-network`'s existing Log Analytics Workspace |
+## Resources deployed
 
-## Design notes
-
-- **Container Apps, not ACI, not AKS.** ACI is a single container group with no orchestration (closer to a one-off `ecs run-task`); AKS is a Kubernetes cluster you manage yourself. Container Apps on the Consumption plan is the closest match to **ECS on Fargate** — serverless, no nodes to manage, scales to zero.
-- **The Container Apps Environment is internal-only** (`internal_load_balancer_enabled = true`). Microsoft's own docs note that an *external* workload-profile environment routes inbound traffic through a Microsoft-managed public IP that **bypasses the subnet's NSG entirely** — that would make `nsg-containerapps` (in `azure-virtual-network`) pointless and would mean the Container App is technically reachable without going through Application Gateway at all. Internal-only means Application Gateway is the sole public entry point, full stop.
-- **A dedicated Key Vault, not the one in `azure-virtual-network`.** That Key Vault has `public_network_access_enabled = false` (Private Endpoint only). Application Gateway *can* reach it fine (same VNet, via the Private Endpoint) — but **importing the ACME-issued certificate into it is a data-plane operation**, and a `terraform apply` running outside the VNet (e.g. your laptop) can't reach a Private-Endpoint-only Key Vault's data plane. Rather than forcing every apply of this project through the `azure-jumpbox-server`, this project has its own Key Vault: RBAC-authorized, public network access enabled, but locked down via Azure RBAC role assignments (not "anyone can read it" — just not gated by a subnet).
-- **Let's Encrypt via DNS-01, not the App Service/Container Apps built-in managed certificate.** Neither Application Gateway nor a plain Azure DNS Zone has a "free managed cert" feature (that only exists on App Service and Front Door, and on Container Apps' own built-in ingress — none of which apply once Application Gateway is doing TLS termination). DNS-01 against the Azure DNS Zone is handled entirely by the `vancluever/acme` Terraform provider's `azuredns` challenge provider, which by default uses the same Azure CLI credentials (`az login`) already required for `azurerm` — no separate service principal needed for a POC where the person applying Terraform already has Contributor-or-better on the subscription.
-- **Uses the existing `azure.jalcalaroot.com` zone, doesn't create a new one.** `dns.tf` reads it via `data "azurerm_dns_zone"` (it lives in resource group `jalcalaroot`, not this project's own RG) and just adds a `container` `A` record. Since that zone is already delegated/authoritative, there's no NS-delegation step before the DNS-01 challenge can succeed — unlike creating a brand-new zone from scratch.
-- **RBAC propagation delay.** Azure role assignments can take a couple of minutes to actually take effect. `time_sleep.wait_for_kv_rbac` (90s) sits between the Key Vault role assignments and anything that reads/writes to the vault's data plane (the certificate import, Application Gateway) — without it, the first `apply` can fail with a 403 even though the role assignment already exists in state.
-- **No `prevent_destroy` anywhere in this project**, unlike `azure-virtual-network`. This is disposable POC infrastructure by design.
+| Resource | Purpose | Docs |
+|---|---|---|
+| Resource Group | Container for everything below, own lifecycle | [Manage resource groups](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal) |
+| Azure Container Registry (Basic) | Hosts the `hello-world` image; admin user disabled | [ACR overview](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-intro) |
+| Container Apps Environment | Internal-only boundary the Container App runs in (Consumption workload profile) | [Container Apps environments](https://learn.microsoft.com/en-us/azure/container-apps/environment) |
+| Container App | The workload itself — `nginx:alpine` + a static `index.html` | [Container Apps overview](https://learn.microsoft.com/en-us/azure/container-apps/overview) |
+| Private DNS Zone | Resolves the Container App's FQDN inside the VNet (required for an internal environment) | [Azure Private DNS](https://learn.microsoft.com/en-us/azure/dns/private-dns-overview) |
+| Application Gateway (Standard_v2) | Public entry point: TLS termination, HTTP→HTTPS redirect, reverse proxy to the Container App | [Application Gateway overview](https://learn.microsoft.com/en-us/azure/application-gateway/overview) |
+| Public IP (Standard) | Attached to Application Gateway | [Public IP addresses](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/public-ip-addresses) |
+| Key Vault | Stores the TLS certificate; RBAC-authorized | [Key Vault overview](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) |
+| Key Vault certificate + Application Gateway integration | How App Gateway pulls the cert from Key Vault | [TLS termination with Key Vault certificates](https://learn.microsoft.com/en-us/azure/application-gateway/key-vault-certs) |
+| Azure DNS Zone (existing, not created here) | Hosts the `A` record for the public hostname | [Azure DNS overview](https://learn.microsoft.com/en-us/azure/dns/dns-overview) |
+| Let's Encrypt certificate (via ACME DNS-01) | The actual TLS certificate, issued through the [`vancluever/acme`](https://registry.terraform.io/providers/vancluever/acme/latest/docs) Terraform provider | [Let's Encrypt](https://letsencrypt.org/how-it-works/) |
+| User Assigned Managed Identities (x2) | One for Container App → ACR pull, one for Application Gateway → Key Vault read | [Managed identities overview](https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview) |
+| Diagnostic Settings | Forwards logs/metrics from the environment, App Gateway, and ACR to an existing Log Analytics Workspace | [Diagnostic settings](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings) |
 
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.5.0
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli), logged in via `az login`, with Contributor-or-better on the subscription (needed both for `azurerm` and for the ACME DNS-01 challenge against Azure DNS)
-- [Docker](https://docs.docker.com/get-docker/), to build and push the hello-world image
-- The `feat/containerapps-subnet` PR in `jalcalaroot-azure-bootstrap` must be merged and applied first (adds `snet-containerapps` to `vnet-jalcalaroot`) — you need its `containerapps_subnet_id`, `appgw_subnet_id`, `vnet_id`, and `log_analytics_workspace_id` outputs
-- The `azure.jalcalaroot.com` Azure DNS Zone must already exist (it does, in resource group `jalcalaroot`) and the identity applying Terraform needs at least DNS Zone Contributor there
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli), logged in via `az login` with Contributor-or-better on the subscription
+- [Docker](https://docs.docker.com/get-docker/)
+- The network project applied first — you need its subnet IDs, VNet ID, and Log Analytics Workspace ID (see [Configuration](#configuration))
+- An existing, already-delegated Azure DNS Zone for your domain
 
 ## Usage
 
 ```bash
 az login
-export TF_VAR_subscription_id="<your-subscription-id>"
+export TF_VAR_subscription_id="<subscription-id>"
 export TF_VAR_acme_email="you@example.com"
 
-# From jalcalaroot-azure-bootstrap/terraform/environments/dev, after the
-# feat/containerapps-subnet PR is merged and applied:
-terraform output containerapps_subnet_id
-terraform output appgw_subnet_id
-terraform output vnet_id
-terraform output log_analytics_workspace_id
-```
-
-Pass those four as `-var` (or put them in a gitignored `.tfvars`):
-
-```bash
 terraform init
-terraform validate
+terraform plan -out=tfplan \
+  -var "network_containerapps_subnet_id=<...>" \
+  -var "network_appgw_subnet_id=<...>" \
+  -var "network_vnet_id=<...>" \
+  -var "network_log_analytics_workspace_id=<...>"
 ```
 
-1. **Create the ACR first** (`-target=azurerm_container_registry.this`), then **build and push the hello-world image** (the Container App can't come up without it already existing in ACR):
+1. **Create the registry first**, then build and push the image (the Container App can't be created without it):
    ```bash
-   terraform apply -target=azurerm_container_registry.this -var "network_containerapps_subnet_id=<...>" -var "network_appgw_subnet_id=<...>" -var "network_vnet_id=<...>" -var "network_log_analytics_workspace_id=<...>"
+   terraform apply -target=azurerm_container_registry.this <same -var flags as above>
 
-   ACR_LOGIN_SERVER=$(terraform output -raw acr_login_server)
-   az acr login --name $(echo $ACR_LOGIN_SERVER | cut -d. -f1)
-   docker build -t $ACR_LOGIN_SERVER/hello-world:latest ./docker
-   docker push $ACR_LOGIN_SERVER/hello-world:latest
+   ACR=$(terraform output -raw acr_login_server)
+   az acr login --name "${ACR%%.*}"
+   docker build -t "$ACR/hello-world:latest" ./docker
+   docker push "$ACR/hello-world:latest"
    ```
-2. **Apply everything else**:
+2. **Apply everything else:**
    ```bash
-   terraform apply -var "network_containerapps_subnet_id=<...>" -var "network_appgw_subnet_id=<...>" -var "network_vnet_id=<...>" -var "network_log_analytics_workspace_id=<...>"
+   terraform apply <same -var flags as above>
    ```
-3. Visit `https://container.azure.jalcalaroot.com` (or whatever `dns_record_name`.`dns_zone_name` resolves to).
+3. Visit the hostname printed in the `fqdn` output.
 
 ```bash
-terraform destroy   # tear down - no lifecycle blocks to remove first, unlike azure-virtual-network
+terraform destroy   # tear down, no lifecycle blocks to remove first
 ```
 
-### Renewing the certificate
-
-`acme_certificate` renews automatically on `terraform apply` once the certificate is within 30 days of expiry (`min_days_remaining` default) — but nothing runs `apply` on a schedule in this POC. Re-run `terraform apply` periodically (or wire this into a scheduled pipeline) to actually pick up the renewal.
-
-### Let's Encrypt rate limits
-
-`acme_server_url` defaults to Let's Encrypt **production**, which limits you to 5 duplicate certificates per domain per week. While iterating on this config, switch to the [staging environment](https://letsencrypt.org/docs/staging-environment/) (`https://acme-staging-v02.api.letsencrypt.org/directory`) to avoid burning through that limit on trial-and-error applies, and only point at production once things work end-to-end.
+Renewing the certificate and Let's Encrypt rate limits: see [CLAUDE.md](CLAUDE.md).
 
 ## Configuration
 
-| Variable | Default | Description |
+| Variable | Default | Notes |
 |---|---|---|
-| `subscription_id` | — | Azure subscription ID, via `TF_VAR_subscription_id` |
-| `location` | `eastus` | Must match the real VNet's region (`vnet-jalcalaroot`, in `jalcalaroot-azure-bootstrap`) |
-| `resource_group_name` | `rg-containerapps-poc` | Own resource group |
-| `network_containerapps_subnet_id` | — | From `azure-virtual-network` output |
-| `network_appgw_subnet_id` | — | From `azure-virtual-network` output |
-| `network_vnet_id` | — | From `azure-virtual-network` output |
-| `network_log_analytics_workspace_id` | — | From `azure-virtual-network` output |
-| `acr_name` | `acrcontainerappspoc` | Must be globally unique |
-| `key_vault_name` | `kv-containerapps-poc` | Must be globally unique |
-| `dns_zone_name` | `azure.jalcalaroot.com` | Must already exist as an Azure DNS Zone |
-| `dns_zone_resource_group_name` | `jalcalaroot` | Resource group holding that existing zone |
-| `dns_record_name` | `container` | Final FQDN = `<dns_record_name>.<dns_zone_name>` |
-| `acme_email` | — | Let's Encrypt account email, via `TF_VAR_acme_email` |
-| `acme_server_url` | Let's Encrypt production | Switch to staging while iterating |
-| `container_image_tag` | `latest` | Must already exist in ACR before applying the Container App |
+| `subscription_id` | — | via `TF_VAR_subscription_id` |
+| `acme_email` | — | via `TF_VAR_acme_email` |
+| `location` | `eastus` | must match the VNet's region |
+| `resource_group_name` | `rg-containerapps-poc` | |
+| `network_containerapps_subnet_id` | — | from the network project |
+| `network_appgw_subnet_id` | — | from the network project |
+| `network_vnet_id` | — | from the network project |
+| `network_log_analytics_workspace_id` | — | from the network project |
+| `acr_name` | `acrcontainerappspoc` | globally unique |
+| `key_vault_name` | `kv-jalcalaroot-capoc` | globally unique |
+| `dns_zone_name` | `azure.jalcalaroot.com` | must already exist |
+| `dns_zone_resource_group_name` | `jalcalaroot` | resource group of that zone |
+| `dns_record_name` | `container` | final FQDN = `<dns_record_name>.<dns_zone_name>` |
+| `acme_server_url` | Let's Encrypt production | use staging while iterating |
+| `container_image_tag` | `latest` | must already exist in ACR before applying |
 | `container_cpu` / `container_memory` | `0.25` / `0.5Gi` | Consumption plan minimum |
-| `app_gateway_sku_capacity` | `1` | Fixed capacity, no autoscaling (POC) |
+| `app_gateway_sku_capacity` | `1` | fixed, no autoscaling |
 
 ## Outputs
 
 | Output | Description |
 |---|---|
-| `fqdn` | Final public hostname |
+| `fqdn` | Public hostname |
 | `app_gateway_public_ip` | Application Gateway's public IP |
 | `acr_login_server` | For `docker build`/`push` |
 | `container_app_environment_default_domain` / `container_app_fqdn` | Internal FQDNs (VNet-only resolution) |
-| `key_vault_name` | This project's dedicated Key Vault |
+| `key_vault_name` | This project's Key Vault |
 
-## Relationship to `jalcalaroot-azure-bootstrap`
+## Cost
 
-This project reads (copies, no `terraform_remote_state`) `containerapps_subnet_id`, `appgw_subnet_id`, `vnet_id`, and `log_analytics_workspace_id` from `jalcalaroot-azure-bootstrap/terraform/environments/dev`'s outputs. It deliberately does **not** read `key_vault_id` (`kv-jalcalaroot-net`) — see [Design notes](#design-notes). If a subnet CIDR, name, or output changes over there, re-check this project before assuming it's unaffected.
+Main ongoing costs: Application Gateway (hourly + capacity units) and its Public IP, Container Apps Consumption (scales toward zero when idle), ACR Basic (flat monthly), Key Vault (per-operation), DNS queries, incremental Log Analytics ingestion. Estimate with the [Azure Pricing Calculator](https://azure.microsoft.com/en-us/pricing/calculator/).
 
-## Cost considerations
+## Not covered
 
-Main ongoing costs: Application Gateway (hourly + capacity units), its Standard Public IP, Container Apps Consumption (per vCPU-second/GiB-second while running, scales toward zero when idle), Azure Container Registry (Basic SKU, flat monthly), Key Vault (per-operation, negligible at this scale), Azure DNS Zone (per-zone + per-query), Log Analytics ingestion (shared with `azure-virtual-network`, incremental cost only). Estimate with the [Azure Pricing Calculator](https://azure.microsoft.com/en-us/pricing/calculator/).
-
-## Next steps
-
-Not covered here: WAF on Application Gateway (currently `Standard_v2`, not `WAF_v2`), automated certificate renewal scheduling, autoscaling rules on the Container App beyond `min_replicas`/`max_replicas`, and multi-region.
+WAF on Application Gateway (currently `Standard_v2`, not `WAF_v2`), scheduled certificate renewal, autoscaling beyond `min_replicas`/`max_replicas`, multi-region.

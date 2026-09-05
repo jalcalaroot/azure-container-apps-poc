@@ -78,6 +78,15 @@ resource "azurerm_container_app" "hello_world" {
     external_enabled = true # "external" = alcanzable desde fuera del environment (App Gateway), no desde internet - el environment es internal-only
     target_port      = 80
 
+    # Sin esto, el edge proxy de Container Apps fuerza HTTPS y devuelve 301
+    # ante cualquier request HTTP plano - exactamente lo que le llega desde
+    # Application Gateway (backend_http_settings usa protocol = "Http" en
+    # app_gateway.tf). TLS ya termino en App Gateway con el cert de Let's
+    # Encrypt; este tramo interno vive enteramente dentro de la VNet
+    # (environment internal-only), asi que HTTP plano aca es la superficie
+    # esperada, no una regresion de seguridad.
+    allow_insecure_connections = true
+
     traffic_weight {
       latest_revision = true
       percentage      = 100
