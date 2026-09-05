@@ -19,9 +19,9 @@ A hello-world container served over HTTPS on a custom domain, running on **Azure
                     Container App (nginx:alpine hello-world)
 ```
 
-Application Gateway is the only public entry point. The Container Apps Environment has no public exposure — see [CLAUDE.md](CLAUDE.md) for the reasoning and other implementation gotchas.
+Application Gateway is the only public entry point. The Container Apps Environment has no public exposure.
 
-This project consumes an existing VNet (subnets + Log Analytics Workspace) provisioned by a sibling network project; it does not create its own virtual network.
+This project consumes an existing VNet (subnets + Log Analytics Workspace) provisioned by a sibling network project; it does not create its own virtual network. Design rationale and implementation notes live in [CLAUDE.md](CLAUDE.md).
 
 ## Resources deployed
 

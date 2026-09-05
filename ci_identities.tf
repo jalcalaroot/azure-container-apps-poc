@@ -133,3 +133,21 @@ resource "azurerm_role_assignment" "ci_plan_state_reader" {
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.ci_plan.principal_id
 }
+
+# El Container Apps Environment (con logs_destination = "log-analytics")
+# necesita leer la SHARED KEY del workspace para conectar los logs -
+# "Reader" no alcanza (esa accion, Microsoft.OperationalInsights/workspaces/
+# sharedKeys/action, esta excluida de Reader a proposito). "Log Analytics
+# Contributor" si la incluye. Solo el agent la necesita (create/update real
+# del environment); plan se queda con Reader, que ya cubre su refresh.
+resource "azurerm_role_assignment" "ci_agent_log_analytics_contributor" {
+  scope                = var.network_log_analytics_workspace_id
+  role_definition_name = "Log Analytics Contributor"
+  principal_id         = azurerm_user_assigned_identity.ci_agent.principal_id
+}
+
+resource "azurerm_role_assignment" "ci_plan_log_analytics_reader" {
+  scope                = var.network_log_analytics_workspace_id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.ci_plan.principal_id
+}
