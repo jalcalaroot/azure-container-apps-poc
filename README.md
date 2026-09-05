@@ -34,8 +34,7 @@ This project consumes an existing VNet (subnets + Log Analytics Workspace) provi
 | Private DNS Zone | Resolves the Container App's FQDN inside the VNet (required for an internal environment) | [Azure Private DNS](https://learn.microsoft.com/en-us/azure/dns/private-dns-overview) |
 | Application Gateway (Standard_v2) | Public entry point: TLS termination, HTTP→HTTPS redirect, reverse proxy to the Container App | [Application Gateway overview](https://learn.microsoft.com/en-us/azure/application-gateway/overview) |
 | Public IP (Standard) | Attached to Application Gateway | [Public IP addresses](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/public-ip-addresses) |
-| Key Vault | Stores the TLS certificate; RBAC-authorized | [Key Vault overview](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) |
-| Key Vault certificate + Application Gateway integration | How App Gateway pulls the cert from Key Vault | [TLS termination with Key Vault certificates](https://learn.microsoft.com/en-us/azure/application-gateway/key-vault-certs) |
+| Key Vault | Stores the TLS certificate; RBAC-authorized; App Gateway reads it via [Key Vault-integrated TLS termination](https://learn.microsoft.com/en-us/azure/application-gateway/key-vault-certs) | [Key Vault overview](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) |
 | Azure DNS Zone (existing, not created here) | Hosts the `A` record for the public hostname | [Azure DNS overview](https://learn.microsoft.com/en-us/azure/dns/dns-overview) |
 | Let's Encrypt certificate (via ACME DNS-01) | The actual TLS certificate, issued through the [`vancluever/acme`](https://registry.terraform.io/providers/vancluever/acme/latest/docs) Terraform provider | [Let's Encrypt](https://letsencrypt.org/how-it-works/) |
 | User Assigned Managed Identities (x2) | One for Container App → ACR pull, one for Application Gateway → Key Vault read | [Managed identities overview](https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview) |
@@ -127,9 +126,9 @@ GitHub Actions, authenticated to Azure via OIDC (Workload Identity Federation) �
 | `terraform-apply.yml` | Push to `main`, **and weekly on a schedule** | `containerapps-poc-agent` (read/write, scoped to this project's resources only) | `plan` + `apply` |
 | `gitleaks.yml` | PR / push to `main` | — | Secret scanning |
 
-The **weekly schedule** on `terraform-apply.yml` isn't just CI hygiene — it's what renews the Let's Encrypt certificate. `acme_certificate` (see `acme.tf`) only re-issues when it's within 30 days of expiry; nothing else triggers a `terraform apply` on its own, so without this schedule the certificate would silently expire.
+The weekly schedule on `terraform-apply.yml` is what renews the Let's Encrypt certificate: `acme_certificate` (`acme.tf`) only re-issues within 30 days of expiry, and nothing else triggers a periodic apply.
 
-Both identities have permissions scoped resource-by-resource (this project's own resource group, the specific DNS zone record, the specific subnet, the shared state storage account) rather than broad access to the shared network resource group — see [CLAUDE.md](CLAUDE.md) for the full RBAC breakdown and the reasoning behind it.
+Both identities are scoped resource-by-resource (this project's resource group, the specific DNS zone, the specific subnet, the shared state storage account) rather than granted broad access to the shared network resource group. Full RBAC breakdown in [CLAUDE.md](CLAUDE.md).
 
 ## Cost
 
