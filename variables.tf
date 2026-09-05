@@ -4,9 +4,9 @@ variable "subscription_id" {
 }
 
 variable "location" {
-  description = "Azure region - debe coincidir con la region de azure-virtual-network (los subnets que consumimos viven ahi)"
+  description = "Azure region - debe coincidir con la region de la VNet real (vnet-jalcalaroot vive en eastus, vease jalcalaroot-azure-bootstrap)"
   type        = string
-  default     = "centralus"
+  default     = "eastus"
 }
 
 variable "resource_group_name" {
@@ -116,9 +116,15 @@ variable "container_memory" {
 # ============================================================================
 
 variable "dns_zone_name" {
-  description = "Nombre de la Azure DNS Zone que gestiona este proyecto. El registrador/zona padre debe delegar los NS records a esta zone (ver README) para que resuelva y para que el DNS-01 challenge de Let's Encrypt funcione."
+  description = "Nombre de la Azure DNS Zone EXISTENTE (ya delegada) donde se agrega el registro de este proyecto. No la creamos aqui - ver dns.tf."
   type        = string
-  default     = "zure.jalcalaroot.com"
+  default     = "azure.jalcalaroot.com"
+}
+
+variable "dns_zone_resource_group_name" {
+  description = "Resource group donde vive la Azure DNS Zone existente (distinto del resource group de este proyecto)"
+  type        = string
+  default     = "jalcalaroot"
 }
 
 variable "dns_record_name" {

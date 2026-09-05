@@ -8,11 +8,6 @@ output "app_gateway_public_ip" {
   value       = azurerm_public_ip.appgw.ip_address
 }
 
-output "dns_zone_name_servers" {
-  description = "Name servers asignados por Azure DNS - delegar estos NS records desde el dominio padre (jalcalaroot.com) para que la zone sea autoritativa"
-  value       = azurerm_dns_zone.this.name_servers
-}
-
 output "acr_login_server" {
   description = "Login server del ACR - usar para docker build/push (ver README)"
   value       = azurerm_container_registry.this.login_server

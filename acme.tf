@@ -1,11 +1,9 @@
-# Certificado Let's Encrypt via DNS-01 contra la Azure DNS Zone de dns.tf.
-# El challenge lo resuelve el provider "azuredns" del provider acme, que por
-# defecto usa las mismas credenciales de `az login` que ya usa azurerm en
-# este proyecto (Default Azure Credentials -> shared credentials en
-# ~/.azure) - no requiere un service principal aparte. Ver README para el
-# prerequisito de delegar los NS records ANTES de aplicar esto: si la zone
-# no es autoritativa todavia, Let's Encrypt no puede ver el TXT del
-# challenge y la emision falla.
+# Certificado Let's Encrypt via DNS-01 contra la Azure DNS Zone existente
+# referenciada en dns.tf. El challenge lo resuelve el provider "azuredns" del
+# provider acme, que por defecto usa las mismas credenciales de `az login`
+# que ya usa azurerm en este proyecto (Default Azure Credentials -> shared
+# credentials en ~/.azure) - no requiere un service principal aparte. Al ser
+# una zone ya delegada/autoritativa, no hace falta ningun paso manual previo.
 
 resource "tls_private_key" "acme_account" {
   algorithm = "RSA"
@@ -43,13 +41,11 @@ resource "acme_certificate" "this" {
     provider = "azuredns"
 
     config = {
-      AZURE_ZONE_NAME       = azurerm_dns_zone.this.name
-      AZURE_RESOURCE_GROUP  = azurerm_resource_group.this.name
+      AZURE_ZONE_NAME       = data.azurerm_dns_zone.this.name
+      AZURE_RESOURCE_GROUP  = data.azurerm_dns_zone.this.resource_group_name
       AZURE_SUBSCRIPTION_ID = var.subscription_id
     }
   }
-
-  depends_on = [azurerm_dns_zone.this]
 }
 
 resource "random_password" "pfx" {
