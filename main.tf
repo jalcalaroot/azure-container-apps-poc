@@ -13,8 +13,9 @@ locals {
 data "azurerm_client_config" "current" {}
 
 # Resource group dedicado - deliberadamente SIN lifecycle.prevent_destroy:
-# a diferencia de azure-virtual-network, esta es infra de POC pensada para
-# levantarse y tirarse sin friccion.
+# a diferencia de azure-virtual-network, esta infra esta pensada para
+# levantarse y tirarse sin friccion (ambiente reproducible bajo demanda,
+# no un sistema con promesa de disponibilidad).
 resource "azurerm_resource_group" "this" {
   name     = var.resource_group_name
   location = var.location

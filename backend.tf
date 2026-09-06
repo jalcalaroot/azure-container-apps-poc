@@ -8,7 +8,7 @@ terraform {
     resource_group_name  = "jalcalaroot"
     storage_account_name = "sttfstatejalcalaroot"
     container_name       = "tfstate"
-    key                  = "container-apps-poc/terraform.tfstate"
+    key                  = "container-apps/terraform.tfstate"
     use_azuread_auth     = true
   }
 }

@@ -1,18 +1,20 @@
 name: Terraform Apply
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "*.tf"
-      - ".github/workflows/terraform-apply.yml"
-  schedule:
-    # Semanal (lunes 06:00 UTC) - no es solo higiene de CI/CD, es lo que
-    # renueva el certificado Let's Encrypt: acme_certificate revisa en cada
-    # apply si faltan <30 días para el vencimiento y re-emite solo en ese
-    # caso (ver acme.tf). Sin este trigger, nada dispara ese apply y el
-    # certificado se vence en silencio.
-    - cron: "0 6 * * 1"
+  # El ambiente esta actualmente destruido (ver CLAUDE.md "Estado actual") -
+  # sin recursos vivos, no hay identidad de CI que autentique ni certificado
+  # que renovar. Triggers automaticos (push a main, schedule semanal para la
+  # renovacion de Let's Encrypt via acme_certificate - ver acme.tf) quedan
+  # desactivados a proposito para no generar corridas rojas/emails de fallo
+  # contra una infra que no existe. Restaurar ambos al redesplegar:
+  #   push:
+  #     branches: [main]
+  #     paths:
+  #       - "*.tf"
+  #       - ".github/workflows/terraform-apply.yml"
+  #   schedule:
+  #     - cron: "0 6 * * 1"
+  workflow_dispatch: {}
 
 permissions:
   id-token: write # requerido para autenticar contra Azure vía OIDC
@@ -23,7 +25,7 @@ concurrency:
   cancel-in-progress: false # nunca cancelar un apply en curso
 
 env:
-  ARM_CLIENT_ID: f960d816-6479-4cec-9f8f-c05ff5014bef # containerapps-poc-agent
+  ARM_CLIENT_ID: f960d816-6479-4cec-9f8f-c05ff5014bef # STALE - containerapps-agent identity was destroyed with the teardown; replace after redeploying
   ARM_TENANT_ID: def99609-2ac6-4adf-a1c7-18d4c97d889f
   ARM_SUBSCRIPTION_ID: 0a314178-d091-4e21-87d5-48ff79bd7ca4
   TF_VAR_subscription_id: 0a314178-d091-4e21-87d5-48ff79bd7ca4

@@ -9,31 +9,34 @@
 # recurso por recurso - minimo privilegio real, no heredado de un RG
 # compartido. El costo es mas granularidad de role assignments; el
 # beneficio es que si este pipeline se compromete, el blast radius es este
-# POC, no toda tu red compartida.
+# proyecto, no toda tu red compartida.
 data "azurerm_storage_account" "tfstate" {
   name                = "sttfstatejalcalaroot"
   resource_group_name = "jalcalaroot"
 }
 
 resource "azurerm_user_assigned_identity" "ci_agent" {
-  name                = "containerapps-poc-agent"
+  name                = "containerapps-agent"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   tags                = local.tags
 }
 
 resource "azurerm_user_assigned_identity" "ci_plan" {
-  name                = "containerapps-poc-plan"
+  name                = "containerapps-plan"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   tags                = local.tags
 }
 
 # Subject claims segun el formato ACTUAL de GitHub para este repo
-# (confirmado via `gh api repos/jalcalaroot/azure-container-apps-poc/actions/oidc/customization/sub`,
+# (confirmado via `gh api repos/jalcalaroot/azure-container-apps/actions/oidc/customization/sub`,
 # incluye el sufijo @<owner_id>/@<repo_id> por default, no es una
 # personalizacion nuestra). Un rename de owner o repo rompe esto - mismo
-# gotcha documentado en jalcalaroot-azure-bootstrap.
+# gotcha documentado en jalcalaroot-azure-bootstrap. El repo fue renombrado
+# de azure-container-apps-poc a azure-container-apps el 2026-09-06; el
+# repo_id (1358507163) es estable a traves del rename, pero el nombre en el
+# subject SI cambia y debe re-verificarse con el comando de arriba.
 #
 # Push a main y schedule (cron) presentan el MISMO subject claim
 # (ref:refs/heads/main) - por eso una sola federated credential en "agent"
@@ -43,7 +46,7 @@ resource "azurerm_federated_identity_credential" "ci_agent_main" {
   user_assigned_identity_id = azurerm_user_assigned_identity.ci_agent.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
-  subject                   = "repo:jalcalaroot@22682982/azure-container-apps-poc@1358507163:ref:refs/heads/main"
+  subject                   = "repo:jalcalaroot@22682982/azure-container-apps@1358507163:ref:refs/heads/main"
 }
 
 resource "azurerm_federated_identity_credential" "ci_plan_pr" {
@@ -51,7 +54,7 @@ resource "azurerm_federated_identity_credential" "ci_plan_pr" {
   user_assigned_identity_id = azurerm_user_assigned_identity.ci_plan.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
-  subject                   = "repo:jalcalaroot@22682982/azure-container-apps-poc@1358507163:pull_request"
+  subject                   = "repo:jalcalaroot@22682982/azure-container-apps@1358507163:pull_request"
 }
 
 # --------------------------------------------------------------------------

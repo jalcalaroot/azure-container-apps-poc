@@ -5,16 +5,17 @@
 # Endpoint (esta en la misma VNet) - PERO importar el certificado ahi es una
 # operacion de DATA PLANE contra la API de la vault, que un `terraform apply`
 # corriendo fuera de la VNet (ej. tu laptop) no puede alcanzar sin pasar por
-# el jumpbox. Para no forzar ese flujo en una POC, esta vault es propia,
+# el jumpbox. Para no forzar ese flujo aqui, esta vault es propia,
 # publica (con RBAC, no acceso abierto), asi que tanto el apply como
 # Application Gateway pueden llegar sin depender de estar dentro de la VNet.
 #
 # Los 5 findings de Checkov suprimidos abajo son consecuencia directa de esa
-# decision: purge protection off (para poder destroy/recreate limpio en una
-# POC desechable) y sin Private Endpoint / firewall (para que el apply y el
-# provider acme puedan llegar al data plane sin pasar por la VNet).
+# decision: purge protection off (este ambiente se levanta y se tira por
+# diseño - ver main.tf - y necesita poder destroy/recreate limpio) y sin
+# Private Endpoint / firewall (para que el apply y el provider acme puedan
+# llegar al data plane sin pasar por la VNet).
 resource "azurerm_key_vault" "this" {
-  #checkov:skip=CKV_AZURE_42:purge protection off a proposito - POC desechable, necesita destroy/recreate limpio
+  #checkov:skip=CKV_AZURE_42:purge protection off a proposito - ambiente reproducible por diseño, necesita destroy/recreate limpio
   #checkov:skip=CKV_AZURE_110:mismo motivo que arriba
   #checkov:skip=CKV_AZURE_109:sin firewall a proposito - RBAC es el control de acceso, no la red (ver comentario arriba)
   #checkov:skip=CKV_AZURE_189:acceso publico intencional - importar el cert es una operacion de data plane que el apply (fuera de la VNet) necesita alcanzar
@@ -25,7 +26,7 @@ resource "azurerm_key_vault" "this" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7
-  purge_protection_enabled   = false # POC - permite destroy/recreate limpio
+  purge_protection_enabled   = false # ambiente reproducible por diseño - permite destroy/recreate limpio
 
   rbac_authorization_enabled    = true
   public_network_access_enabled = true
@@ -61,7 +62,7 @@ resource "azurerm_role_assignment" "appgw_kv_secrets_user" {
   principal_id         = azurerm_user_assigned_identity.appgw_kv_reader.principal_id
 }
 
-# containerapps-poc-plan (CI, solo lectura - ver ci_identities.tf) necesita
+# containerapps-plan (CI, solo lectura - ver ci_identities.tf) necesita
 # poder leer el certificado durante el refresh de "terraform plan", pero no
 # tiene por que poder crear/modificar nada acá. "Key Vault Reader" es
 # metadata-only (no lee el VALOR de secrets), pero si cubre
