@@ -9,8 +9,8 @@ plugin "terraform" {
   preset  = "recommended"
 }
 
-# Deshabilitada a proposito: este proyecto es POC desechable por diseño
-# (ver CLAUDE.md "No prevent_destroy anywhere") - el Key Vault y su
+# Deshabilitada a proposito: este proyecto es ephemeral/reproducible por
+# diseño (ver CLAUDE.md "No prevent_destroy anywhere") - el Key Vault y su
 # certificado deben poder destruirse limpio con `terraform destroy`, no
 # quedar protegidos como en azure-virtual-network.
 rule "azurerm_resources_missing_prevent_destroy" {

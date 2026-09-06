@@ -1,11 +1,16 @@
 name: Terraform Plan
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "*.tf"
-      - ".github/workflows/terraform-*.yml"
+  # El ambiente esta actualmente destruido (ver CLAUDE.md "Estado actual") -
+  # sin recursos vivos, la identidad de CI de plan no puede autenticar.
+  # Trigger automatico en PR desactivado a proposito para no generar
+  # corridas rojas contra una infra que no existe. Restaurar al redesplegar:
+  #   pull_request:
+  #     branches: [main]
+  #     paths:
+  #       - "*.tf"
+  #       - ".github/workflows/terraform-*.yml"
+  workflow_dispatch: {}
 
 permissions:
   id-token: write # requerido para autenticar contra Azure vía OIDC
@@ -17,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ARM_CLIENT_ID: d98b170f-924c-4421-bba5-95f6cca8e407 # containerapps-poc-plan
+  ARM_CLIENT_ID: d98b170f-924c-4421-bba5-95f6cca8e407 # STALE - containerapps-plan identity was destroyed with the teardown; replace after redeploying
   ARM_TENANT_ID: def99609-2ac6-4adf-a1c7-18d4c97d889f
   ARM_SUBSCRIPTION_ID: 0a314178-d091-4e21-87d5-48ff79bd7ca4
   TF_VAR_subscription_id: 0a314178-d091-4e21-87d5-48ff79bd7ca4

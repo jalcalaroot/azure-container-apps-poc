@@ -1,8 +1,6 @@
-# Azure Container Apps POC
+# Azure Container Apps
 
 A hello-world container served over HTTPS on a custom domain, running on **Azure Container Apps** (Consumption plan) behind **Application Gateway** with a **Let's Encrypt** certificate.
-
-**Live:** https://container.azure.jalcalaroot.com
 
 ## Architecture
 
@@ -76,7 +74,8 @@ terraform plan -out=tfplan \
    ```bash
    terraform apply <same -var flags as above>
    ```
-3. Visit the hostname printed in the `fqdn` output.
+3. **Pin the CI agent's Key Vault access** (first deploy only — see `extra_key_vault_admin_object_ids` in `variables.tf`), then re-apply.
+4. Visit the hostname printed in the `fqdn` output.
 
 ```bash
 terraform destroy   # tear down, no lifecycle blocks to remove first
@@ -91,13 +90,13 @@ Renewing the certificate and Let's Encrypt rate limits: see [CLAUDE.md](CLAUDE.m
 | `subscription_id` | — | via `TF_VAR_subscription_id` |
 | `acme_email` | — | via `TF_VAR_acme_email` |
 | `location` | `eastus` | must match the VNet's region |
-| `resource_group_name` | `rg-containerapps-poc` | |
+| `resource_group_name` | `rg-containerapps` | |
 | `network_containerapps_subnet_id` | — | from the network project |
 | `network_appgw_subnet_id` | — | from the network project |
 | `network_vnet_id` | — | from the network project |
 | `network_log_analytics_workspace_id` | — | from the network project |
-| `acr_name` | `acrcontainerappspoc` | globally unique |
-| `key_vault_name` | `kv-jalcalaroot-capoc` | globally unique |
+| `acr_name` | `acrcontainerapps` | globally unique |
+| `key_vault_name` | `kv-containerapps` | globally unique |
 | `dns_zone_name` | `azure.jalcalaroot.com` | must already exist |
 | `dns_zone_resource_group_name` | `jalcalaroot` | resource group of that zone |
 | `dns_record_name` | `container` | final FQDN = `<dns_record_name>.<dns_zone_name>` |
@@ -122,11 +121,11 @@ GitHub Actions, authenticated to Azure via OIDC (Workload Identity Federation) �
 
 | Workflow | Trigger | Identity | What it does |
 |---|---|---|---|
-| `terraform-plan.yml` | Pull request | `containerapps-poc-plan` (read-only) | `fmt -check`, `validate`, [tflint](https://github.com/terraform-linters/tflint), [Checkov](https://www.checkov.io/) (blocking), `plan`, posts the plan as a PR comment (flags any destroy/replace) |
-| `terraform-apply.yml` | Push to `main`, **and weekly on a schedule** | `containerapps-poc-agent` (read/write, scoped to this project's resources only) | `plan` + `apply` |
+| `terraform-plan.yml` | Pull request | `containerapps-plan` (read-only) | `fmt -check`, `validate`, [tflint](https://github.com/terraform-linters/tflint), [Checkov](https://www.checkov.io/) (blocking), `plan`, posts the plan as a PR comment (flags any destroy/replace) |
+| `terraform-apply.yml` | Push to `main`, **and weekly on a schedule** | `containerapps-agent` (read/write, scoped to this project's resources only) | `plan` + `apply` |
 | `gitleaks.yml` | PR / push to `main` | — | Secret scanning |
 
-The weekly schedule on `terraform-apply.yml` is what renews the Let's Encrypt certificate: `acme_certificate` (`acme.tf`) only re-issues within 30 days of expiry, and nothing else triggers a periodic apply.
+The weekly schedule on `terraform-apply.yml` is what renews the Let's Encrypt certificate: `acme_certificate` (`acme.tf`) only re-issues within 30 days of expiry, and nothing else triggers a periodic apply. **Both automatic triggers are currently disabled** — see [Status](#status).
 
 Both identities are scoped resource-by-resource (this project's resource group, the specific DNS zone, the specific subnet, the shared state storage account) rather than granted broad access to the shared network resource group. Full RBAC breakdown in [CLAUDE.md](CLAUDE.md).
 
@@ -137,3 +136,7 @@ Main ongoing costs: Application Gateway (hourly + capacity units) and its Public
 ## Not covered
 
 WAF on Application Gateway (currently `Standard_v2`, not `WAF_v2`), autoscaling beyond `min_replicas`/`max_replicas`, multi-region.
+
+## Status
+
+This environment is deployed on demand rather than kept running permanently — Application Gateway bills hourly whether or not it's serving traffic, so it comes down between uses rather than sitting idle. **Currently torn down**: no live demo URL, and both Terraform workflows are `workflow_dispatch`-only until the next deploy (see the comments in `.github/workflows/terraform-*.yml` for the triggers to restore).
